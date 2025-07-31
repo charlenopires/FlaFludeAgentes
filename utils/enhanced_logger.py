@@ -295,17 +295,23 @@ class EnhancedLogger:
                             indent=2, ensure_ascii=False)
         
         elif format.lower() == "csv":
-            import csv
-            import io
-            
-            output = io.StringIO()
-            if entries:
-                writer = csv.DictWriter(output, fieldnames=asdict(entries[0]).keys())
-                writer.writeheader()
-                for entry in entries:
-                    writer.writerow(asdict(entry))
-            
-            return output.getvalue()
+            try:
+                import csv
+                import io
+                
+                output = io.StringIO()
+                if entries:
+                    # Converte entries para dicionários
+                    entries_dict = [asdict(entry) for entry in entries]
+                    
+                    writer = csv.DictWriter(output, fieldnames=entries_dict[0].keys())
+                    writer.writeheader()
+                    for entry_dict in entries_dict:
+                        writer.writerow(entry_dict)
+                
+                return output.getvalue()
+            except Exception as e:
+                return f"Erro na exportação CSV: {str(e)}"
         
         return str(entries)
 

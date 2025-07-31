@@ -4,12 +4,19 @@ Interface avançada para monitoramento em tempo real dos agentes
 """
 
 import streamlit as st
-import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
 import json
+
+# Importações opcionais para gráficos
+try:
+    import pandas as pd
+    import plotly.express as px
+    import plotly.graph_objects as go
+    PLOTLY_AVAILABLE = True
+except ImportError:
+    PLOTLY_AVAILABLE = False
+    st.warning("⚠️ Plotly não instalado. Gráficos não estarão disponíveis. Execute: `uv add plotly pandas`")
 
 from .enhanced_logger import enhanced_logger, LogLevel, LogCategory
 
@@ -124,6 +131,25 @@ class LogViewer:
         
         st.markdown("#### ⏰ **Timeline de Eventos**")
         
+        if not PLOTLY_AVAILABLE:
+            # Versão simplificada sem gráficos
+            st.markdown("**📊 Timeline Simplificada (Plotly não disponível):**")
+            
+            # Agrupa por horário
+            timeline_data = {}
+            for log in logs[-20:]:  # Últimos 20 eventos
+                time_key = log['timestamp'][:16]  # YYYY-MM-DD HH:MM
+                if time_key not in timeline_data:
+                    timeline_data[time_key] = []
+                timeline_data[time_key].append(log)
+            
+            for time_key in sorted(timeline_data.keys(), reverse=True):
+                st.markdown(f"**🕓 {time_key}**")
+                for log in timeline_data[time_key]:
+                    agent_emoji = "🤖" if log.get('agent_name') else "⚙️"
+                    st.markdown(f"  {agent_emoji} {log.get('agent_name', 'Sistema')}: {log['event_type']} - {log['level']}")
+            return
+        
         # Converte para DataFrame
         df = pd.DataFrame(logs)
         df['timestamp'] = pd.to_datetime(df['timestamp'])
@@ -164,6 +190,19 @@ class LogViewer:
             agent_counts[agent] = agent_counts.get(agent, 0) + 1
         
         if agent_counts:
+            if not PLOTLY_AVAILABLE:
+                # Versão simplificada sem gráficos
+                st.markdown("**📊 Estatísticas por Agente:**")
+                
+                # Ordena por quantidade de eventos
+                sorted_agents = sorted(agent_counts.items(), key=lambda x: x[1], reverse=True)
+                
+                for agent, count in sorted_agents:
+                    emoji = "🤖🔴" if agent == "flamengo" else "🤖🟢" if agent == "fluminense" else "🤖⚖️" if agent == "supervisor" else "🤖📈" if agent == "researcher" else "⚙️"
+                    percentage = (count / sum(agent_counts.values())) * 100
+                    st.markdown(f"  {emoji} **{agent.title()}**: {count} eventos ({percentage:.1f}%)")
+                return
+            
             # Gráfico de barras
             agents = list(agent_counts.keys())
             counts = list(agent_counts.values())
@@ -198,6 +237,42 @@ class LogViewer:
         perf_logs = [log for log in logs if log.get('duration_ms')]
         
         if perf_logs:
+            if not PLOTLY_AVAILABLE:
+                # Versão simplificada - apenas estatísticas
+                durations = [log['duration_ms'] for log in perf_logs]
+                agents_perf = {}
+                
+                for log in perf_logs:
+                    agent = log.get('agent_name', 'system')
+                    if agent not in agents_perf:
+                        agents_perf[agent] = []
+                    agents_perf[agent].append(log['duration_ms'])
+                
+                # Estatísticas gerais
+                avg_duration = sum(durations) / len(durations)
+                max_duration = max(durations)
+                min_duration = min(durations)
+                
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    st.metric("⏱️ Tempo Médio", f"{avg_duration:.1f}ms")
+                
+                with col2:
+                    st.metric("🏃 Mais Lento", f"{max_duration:.1f}ms")
+                
+                with col3:
+                    st.metric("⚡ Mais Rápido", f"{min_duration:.1f}ms")
+                
+                # Performance por agente
+                st.markdown("**📊 Performance por Agente:**")
+                for agent, times in agents_perf.items():
+                    avg_time = sum(times) / len(times)
+                    emoji = "🤖🔴" if agent == "flamengo" else "🤖🟢" if agent == "fluminense" else "🤖⚖️" if agent == "supervisor" else "🤖📈" if agent == "researcher" else "⚙️"
+                    st.markdown(f"  {emoji} **{agent.title()}**: {avg_time:.1f}ms médio ({len(times)} execuções)")
+                
+                return
+            
             df = pd.DataFrame(perf_logs)
             df['timestamp'] = pd.to_datetime(df['timestamp'])
             
