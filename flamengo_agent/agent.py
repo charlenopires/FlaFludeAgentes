@@ -4,11 +4,21 @@ Torcedor apaixonado do Flamengo com argumentação persuasiva
 """
 
 import os
+import time
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 from google.adk.agents import LlmAgent
 from google.adk.tools import FunctionTool
+from google.adk.runners import Runner
+from google.adk.sessions import InMemorySessionService
+from google.genai import types
 from dotenv import load_dotenv
+
+# Sistema de log aprimorado
+from utils.enhanced_logger import (
+    enhanced_logger, log_agent_start, log_agent_response, 
+    log_tool_execution, log_error, LogLevel, LogCategory
+)
 
 # Carrega variáveis do .env
 load_dotenv()
@@ -136,7 +146,7 @@ Os fatos são incontestáveis: somos MAIORES em tudo!"""
     request_research_function = FunctionTool(request_research_tool)
     
     # Cria o agente usando Google ADK LlmAgent
-    flamengo_agent = LlmAgent(
+    flamengo_llm_agent = LlmAgent(
         name="flamengo_agent",
         model="gemini-2.0-flash", 
         description="Torcedor apaixonado do Flamengo especializado em argumentação persuasiva com dados e emoção",
@@ -144,12 +154,136 @@ Os fatos são incontestáveis: somos MAIORES em tudo!"""
         tools=[initial_argument_function, counter_argument_function, request_research_function]
     )
     
-    return flamengo_agent
+    # Configura Runner para execução
+    session_service = InMemorySessionService()
+    runner = Runner(
+        agent=flamengo_llm_agent,
+        app_name="flamengo_agent",
+        session_service=session_service
+    )
+    
+    # Cria classe wrapper para adicionar método run
+    class FlamengoWrapper:
+        def __init__(self, agent, runner, session_service):
+            self.agent = agent
+            self.runner = runner
+            self.session_service = session_service
+            self.name = agent.name
+            self.description = agent.description
+            self.tools = agent.tools
+        
+        def run(self, prompt: str):
+            """Executa o flamengo usando Runner ADK com logging aprimorado"""
+            import uuid
+            import asyncio
+            
+            session_id = f"session_{uuid.uuid4().hex[:8]}"
+            user_id = f"user_{uuid.uuid4().hex[:8]}"
+            start_time = time.time()
+            
+            # Log início da execução
+            correlation_id = log_agent_start(
+                agent_name="flamengo",
+                session_id=session_id,
+                user_id=user_id,
+                prompt=prompt
+            )
+            
+            try:
+                async def run_with_session():
+                    # Log criação de sessão
+                    enhanced_logger.log(
+                        LogLevel.INFO,
+                        LogCategory.SESSION,
+                        f"Criando sessão para torcedor Flamengo",
+                        agent_name="flamengo",
+                        session_id=session_id,
+                        user_id=user_id,
+                        event_type="session_create",
+                        correlation_id=correlation_id
+                    )
+                    
+                    # Cria sessão de forma assíncrona
+                    await self.session_service.create_session(
+                        app_name="flamengo_agent",
+                        user_id=user_id,
+                        session_id=session_id
+                    )
+                    
+                    content = types.Content(role="user", parts=[types.Part(text=prompt)])
+                    response_text = ""
+                    
+                    # Log início do processamento ADK
+                    enhanced_logger.log(
+                        LogLevel.INFO,
+                        LogCategory.AGENT,
+                        f"Torcedor Flamengo processando: {prompt[:50]}...",
+                        agent_name="flamengo",
+                        session_id=session_id,
+                        event_type="adk_processing_start",
+                        details={"prompt_type": "fan_argument", "content_length": len(prompt)},
+                        correlation_id=correlation_id
+                    )
+                    
+                    async for event in self.runner.run_async(
+                        user_id=user_id,
+                        session_id=session_id,
+                        new_message=content
+                    ):
+                        if event.is_final_response():
+                            response_text = event.content.parts[0].text
+                            break
+                            
+                    return response_text or "Sem resposta do agente"
+                
+                # Executa de forma assíncrona
+                response = asyncio.run(run_with_session())
+                
+                # Calcula duração e log de sucesso
+                duration_ms = (time.time() - start_time) * 1000
+                log_agent_response(
+                    agent_name="flamengo",
+                    session_id=session_id,
+                    response=response,
+                    duration_ms=duration_ms,
+                    correlation_id=correlation_id
+                )
+                
+                # Log para pesquisa se houver tags [PESQUISA]
+                if "[PESQUISA]" in response.upper():
+                    enhanced_logger.log(
+                        LogLevel.INFO,
+                        LogCategory.AGENT,
+                        "Torcedor Flamengo solicitou pesquisa",
+                        agent_name="flamengo",
+                        session_id=session_id,
+                        event_type="research_request",
+                        details={"research_detected": True},
+                        correlation_id=correlation_id
+                    )
+                
+                return response
+                
+            except Exception as e:
+                # Log detalhado do erro
+                duration_ms = (time.time() - start_time) * 1000
+                log_error(
+                    error=e,
+                    context="flamengo_agent_execution",
+                    agent_name="flamengo",
+                    session_id=session_id,
+                    correlation_id=correlation_id
+                )
+                
+                return f"🔴 Erro no Flamengo: {str(e)}"
+    
+    return FlamengoWrapper(flamengo_llm_agent, runner, session_service)
 
 
 if __name__ == "__main__":
     """Executa o agente Flamengo usando Flask e A2A Protocol"""
     from flask import Flask, request, jsonify
+    import asyncio
     
     # Cria o agente ADK
     flamengo = create_flamengo_agent()
@@ -193,14 +327,28 @@ if __name__ == "__main__":
             data = request.get_json()
             prompt = data.get('prompt', data.get('message', ''))
             
-            # Executa o agente ADK
-            response = ""
-            for chunk in flamengo.run(prompt):
-                if isinstance(chunk, str):
-                    response += chunk
-                elif hasattr(chunk, 'content'):
-                    response += chunk.content
-            
+            # Implementação simplificada usando as tools diretamente
+            if 'argumento inicial' in prompt.lower() or 'inicial' in prompt.lower():
+                response = flamengo.tools[0].func()  # create_initial_argument_tool
+            elif 'contra' in prompt.lower() or 'rebater' in prompt.lower():
+                response = flamengo.tools[1].func(prompt)  # create_counter_argument_tool  
+            elif 'pesquisa' in prompt.lower():
+                response = flamengo.tools[2].func(prompt)  # request_research_tool
+            else:
+                response = f"""🔴 **TORCEDOR FLAMENGO ATIVO**
+
+📨 **Mensagem:** {prompt[:100]}{'...' if len(prompt) > 100 else ''}
+
+🔥 **Argumentos principais:**
+• 8 Brasileirões (dobro do rival!)
+• 3 Libertadores (tricampeão continental)
+• Maior torcida do Brasil (43+ milhões)
+• Mundial de 1981 histórico
+
+⚡ **Pronto para defender o Mengão com dados e paixão!**
+
+Use: `argumento inicial`, `contra [rival]`, `pesquisa [tema]`"""
+                
             return jsonify({"response": response})
             
         except Exception as e:

@@ -13,11 +13,21 @@ from typing import Dict, Any, List
 import httpx
 from dotenv import load_dotenv
 
+# Sistema de log aprimorado
+from utils.enhanced_logger import (
+    enhanced_logger, log_debate_event, log_error, 
+    LogLevel, LogCategory
+)
+from utils.log_viewer import render_log_dashboard
+
 # Importa agentes usando Google ADK oficial
 from supervisor_agent.agent import create_supervisor_agent
 from flamengo_agent.agent import create_flamengo_agent  
 from fluminense_agent.agent import create_fluminense_agent
 from researcher_agent.agent import create_researcher_agent
+
+# Importa orquestrador A2A
+from a2a_orchestrator_old import a2a_orchestrator
 
 # Carrega variáveis do .env
 load_dotenv()
@@ -150,9 +160,18 @@ def init_session_state():
         st.session_state.agents = {}
 
 def initialize_agents():
-    """Inicializa instâncias dos agentes ADK oficiais"""
+    """Inicializa instâncias dos agentes ADK oficiais com logging aprimorado"""
     if not st.session_state.agents:
         try:
+            # Log início da inicialização
+            enhanced_logger.log(
+                LogLevel.SYSTEM_EVENT,
+                LogCategory.SYSTEM,
+                "Iniciando inicialização dos agentes ADK",
+                event_type="agent_initialization_start",
+                details={"total_agents": 4}
+            )
+            
             # Cria agentes usando Google ADK oficial
             supervisor = create_supervisor_agent()
             flamengo = create_flamengo_agent()
@@ -165,10 +184,32 @@ def initialize_agents():
                 "fluminense": fluminense,
                 "researcher": researcher
             }
+            
+            # Log sucesso da inicialização
+            enhanced_logger.log(
+                LogLevel.SYSTEM_EVENT,
+                LogCategory.SYSTEM,
+                "Agentes ADK inicializados com sucesso",
+                event_type="agent_initialization_success",
+                details={
+                    "agents_created": list(st.session_state.agents.keys()),
+                    "total_agents": len(st.session_state.agents)
+                }
+            )
+            
             add_backstage_log("✅ Agentes ADK oficiais inicializados com sucesso", "success")
+            
         except Exception as e:
             st.session_state.agents = {}
+            
+            # Log erro da inicialização
+            log_error(
+                error=e,
+                context="agent_initialization"
+            )
+            
             add_backstage_log(f"❌ Erro ao inicializar agentes: {str(e)}", "error")
+            
     return st.session_state.agents
 
 def add_message(agent_name: str, message: str, message_type: str = "normal"):
@@ -181,13 +222,32 @@ def add_message(agent_name: str, message: str, message_type: str = "normal"):
     })
 
 def add_backstage_log(log_message: str, log_type: str = "info"):
-    """Adiciona log aos bastidores"""
+    """Adiciona log aos bastidores com sistema aprimorado"""
+    # Log tradicional para interface
     st.session_state.backstage_log.append({
         "message": log_message,
         "type": log_type,
         "timestamp": time.time(),
         "formatted_time": datetime.now().strftime("%H:%M:%S")
     })
+    
+    # Log aprimorado para análise
+    if log_type == "success":
+        level = LogLevel.INFO
+    elif log_type == "warning":
+        level = LogLevel.WARNING
+    elif log_type == "error":
+        level = LogLevel.ERROR
+    else:
+        level = LogLevel.INFO
+    
+    enhanced_logger.log(
+        level=level,
+        category=LogCategory.SYSTEM,
+        message=log_message,
+        event_type="backstage_log",
+        details={"log_type": log_type}
+    )
 
 def format_time(seconds: int) -> str:
     """Formata tempo em MM:SS"""
@@ -378,6 +438,16 @@ Por favor, **quantos minutos** deve durar nosso debate Flamengo vs Fluminense?
                             st.session_state.current_turn = "Flamengo"
                             st.session_state.debate_start_time = time.time()
                             
+                            # Log evento de início do debate
+                            log_debate_event(
+                                event_type="debate_started",
+                                details={
+                                    "duration_minutes": debate_duration,
+                                    "starting_team": "Flamengo",
+                                    "start_time": datetime.now().isoformat()
+                                }
+                            )
+                            
                             add_message("Supervisor", start_result, "system")
                             add_backstage_log(f"Debate iniciado: {debate_duration} minutos", "success")
                             add_backstage_log("Flamengo vai começar!", "info")
@@ -400,6 +470,16 @@ Por favor, **quantos minutos** deve durar nosso debate Flamengo vs Fluminense?
                 # Tempo esgotado - análise final
                 st.session_state.debate_finished = True
                 st.session_state.debate_active = False
+                
+                # Log fim do debate
+                log_debate_event(
+                    event_type="debate_ended",
+                    details={
+                        "reason": "time_expired",
+                        "total_messages": len(st.session_state.debate_messages),
+                        "final_turn": st.session_state.current_turn
+                    }
+                )
                 
                 add_backstage_log("⏰ Tempo esgotado! Iniciando análise final", "warning")
                 
@@ -454,6 +534,16 @@ Por favor, **quantos minutos** deve durar nosso debate Flamengo vs Fluminense?
                         message_content = argument_result
                         add_message(agent_name, message_content, "argument")
                         
+                        # Log turno do agente
+                        log_debate_event(
+                            event_type="agent_turn",
+                            details={
+                                "agent": st.session_state.current_turn.lower(),
+                                "argument_length": len(message_content),
+                                "turn_number": len([m for m in st.session_state.debate_messages if "Torcedor" in m["agent"]])
+                            }
+                        )
+                        
                         # Processa solicitações de pesquisa no argumento atual
                         if "[PESQUISA]" in message_content.upper():
                             researcher = agents['researcher']
@@ -462,6 +552,15 @@ Por favor, **quantos minutos** deve durar nosso debate Flamengo vs Fluminense?
                             matches = re.findall(pesquisa_pattern, message_content, re.IGNORECASE)
                             
                             for query in matches:
+                                # Log solicitação de pesquisa
+                                log_debate_event(
+                                    event_type="research_requested",
+                                    details={
+                                        "requesting_agent": st.session_state.current_turn.lower(),
+                                        "query": query.strip()[:100]
+                                    }
+                                )
+                                
                                 # Usa pesquisador para solicitar dados
                                 prompt = get_debate_prompt("research_query", query=query.strip())
                                 research_result = run_agent_sync(researcher, prompt)
@@ -651,12 +750,45 @@ with col_status:
         if st.session_state.agents_initialized:
             st.json(system_status)
 
+# --- Sistema de Logs Avançado ---
+st.markdown("---")
+st.markdown("### 📊 **Sistema de Monitoramento Avançado**")
+
+# Toggle para mostrar/ocultar logs
+if 'show_enhanced_logs' not in st.session_state:
+    st.session_state.show_enhanced_logs = False
+
+col_toggle, col_metrics = st.columns([1, 3])
+
+with col_toggle:
+    if st.button(
+        "📈 Mostrar Logs" if not st.session_state.show_enhanced_logs else "✖️ Ocultar Logs",
+        help="Sistema completo de monitoramento e análise"
+    ):
+        st.session_state.show_enhanced_logs = not st.session_state.show_enhanced_logs
+        st.rerun()
+
+with col_metrics:
+    # Mostra métricas rápidas
+    metrics = enhanced_logger.get_performance_metrics()
+    st.markdown(f"""
+    📊 **Métricas:** {metrics['total_events']} eventos | 
+    🤖 **Agentes:** {metrics['agent_executions']} execuções | 
+    ⚡ **Média:** {metrics['avg_response_time']:.1f}ms |
+    ❌ **Erros:** {metrics['errors']}
+    """)
+
+# Renderiza dashboard se solicitado
+if st.session_state.show_enhanced_logs:
+    render_log_dashboard()
+
 # --- Footer ---
 st.markdown("---")
 st.markdown("""
 <div style="text-align: center; padding: 20px; opacity: 0.8;">
     <h4>🤖 Sistema Multi-Agente A2A + Google ADK</h4>
     <p><strong>4 Agentes Independentes:</strong> Supervisor, Flamengo, Fluminense, Pesquisador</p>
-    <p><small>Protocolo A2A v1.0 | Powered by Google Gemini AI | Built with Streamlit</small></p>
+    <p><strong>Sistema de Log Avançado:</strong> Monitoramento em Tempo Real + Análise de Performance</p>
+    <p><small>Protocolo A2A v1.0 | Enhanced Logging System | Powered by Google Gemini AI | Built with Streamlit</small></p>
 </div>
 """, unsafe_allow_html=True)

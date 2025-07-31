@@ -5,11 +5,21 @@ Especialista em retórica, psicologia, linguística e análise de debates
 
 import os
 import random
+import time
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 from google.adk.agents import LlmAgent
 from google.adk.tools import FunctionTool
+from google.adk.runners import Runner
+from google.adk.sessions import InMemorySessionService
+from google.genai import types
 from dotenv import load_dotenv
+
+# Sistema de log aprimorado
+from utils.enhanced_logger import (
+    enhanced_logger, log_agent_start, log_agent_response, 
+    log_tool_execution, log_error, LogLevel, LogCategory
+)
 
 # Carrega variáveis do .env
 load_dotenv()
@@ -23,9 +33,30 @@ def create_supervisor_agent() -> LlmAgent:
     # Tools para o supervisor usando FunctionTool do ADK
     def start_debate_tool(duration_minutes: int) -> str:
         """Inicia debate com duração específica e sorteia primeiro torcedor"""
+        tool_start = time.time()
+        
         try:
+            # Log início da ferramenta
+            enhanced_logger.log(
+                LogLevel.INFO,
+                LogCategory.TOOL_EXECUTION,
+                "Executando start_debate_tool",
+                agent_name="supervisor",
+                event_type="tool_start",
+                details={"duration_minutes": duration_minutes}
+            )
+            
             if duration_minutes < 2 or duration_minutes > 30:
-                return "❌ Duração deve ser entre 2 e 30 minutos"
+                error_msg = "❌ Duração deve ser entre 2 e 30 minutos"
+                enhanced_logger.log(
+                    LogLevel.WARNING,
+                    LogCategory.TOOL_EXECUTION,
+                    "Parâmetro inválido em start_debate_tool",
+                    agent_name="supervisor",
+                    event_type="tool_validation_error",
+                    details={"duration_minutes": duration_minutes, "error": error_msg}
+                )
+                return error_msg
             
             # Sorteia qual torcedor inicia
             starting_teams = ["FLAMENGO", "FLUMINENSE"]
@@ -51,9 +82,25 @@ def create_supervisor_agent() -> LlmAgent:
 
 {starting_emoji} Torcedor do {starting_team}, você tem {turn_duration/60:.1f} minutos. Apresente seus argumentos iniciais!"""
             
+            # Log sucesso da ferramenta
+            duration_ms = (time.time() - tool_start) * 1000
+            log_tool_execution(
+                agent_name="supervisor",
+                tool_name="start_debate_tool",
+                parameters={"duration_minutes": duration_minutes},
+                result=f"Debate iniciado - {starting_team} começa",
+                duration_ms=duration_ms
+            )
+            
             return result
             
         except Exception as e:
+            duration_ms = (time.time() - tool_start) * 1000
+            log_error(
+                error=e,
+                context="start_debate_tool",
+                agent_name="supervisor"
+            )
             return f"❌ Erro ao iniciar debate: {str(e)}"
     
     def analyze_debate_tool(debate_history: str) -> str:
@@ -248,7 +295,7 @@ Avaliação fundamentada em expertise acadêmica em psicologia cognitiva, lingu�
     get_time_status_function = FunctionTool(get_time_status_tool)
     
     # Cria o agente usando Google ADK LlmAgent
-    supervisor = LlmAgent(
+    supervisor_agent = LlmAgent(
         name="supervisor_agent",
         model="gemini-2.0-flash",
         description="Especialista neutro em moderação de debates entre torcedores, com expertise em retórica, psicologia cognitiva e linguística aplicada",
@@ -256,12 +303,123 @@ Avaliação fundamentada em expertise acadêmica em psicologia cognitiva, lingu�
         tools=[start_debate_function, analyze_debate_function, get_time_status_function]
     )
     
-    return supervisor
+    # Configura Runner para execução
+    session_service = InMemorySessionService()
+    runner = Runner(
+        agent=supervisor_agent,
+        app_name="supervisor_agent",
+        session_service=session_service
+    )
+    
+    # Cria classe wrapper para adicionar método run
+    class SupervisorWrapper:
+        def __init__(self, agent, runner, session_service):
+            self.agent = agent
+            self.runner = runner
+            self.session_service = session_service
+            self.name = agent.name
+            self.description = agent.description
+            self.tools = agent.tools
+        
+        def run(self, prompt: str):
+            """Executa o supervisor usando Runner ADK com logging aprimorado"""
+            import uuid
+            import asyncio
+            
+            session_id = f"session_{uuid.uuid4().hex[:8]}"
+            user_id = f"user_{uuid.uuid4().hex[:8]}"
+            start_time = time.time()
+            
+            # Log início da execução
+            correlation_id = log_agent_start(
+                agent_name="supervisor",
+                session_id=session_id,
+                user_id=user_id,
+                prompt=prompt
+            )
+            
+            try:
+                async def run_with_session():
+                    # Log criação de sessão
+                    enhanced_logger.log(
+                        LogLevel.INFO,
+                        LogCategory.SESSION,
+                        f"Criando sessão para supervisor",
+                        agent_name="supervisor",
+                        session_id=session_id,
+                        user_id=user_id,
+                        event_type="session_create",
+                        correlation_id=correlation_id
+                    )
+                    
+                    # Cria sessão de forma assíncrona
+                    await self.session_service.create_session(
+                        app_name="supervisor_agent",
+                        user_id=user_id,
+                        session_id=session_id
+                    )
+                    
+                    content = types.Content(role="user", parts=[types.Part(text=prompt)])
+                    response_text = ""
+                    
+                    # Log início do processamento ADK
+                    enhanced_logger.log(
+                        LogLevel.INFO,
+                        LogCategory.AGENT,
+                        f"Processando prompt com ADK Runner",
+                        agent_name="supervisor",
+                        session_id=session_id,
+                        event_type="adk_processing_start",
+                        details={"content_length": len(prompt)},
+                        correlation_id=correlation_id
+                    )
+                    
+                    async for event in self.runner.run_async(
+                        user_id=user_id,
+                        session_id=session_id,
+                        new_message=content
+                    ):
+                        if event.is_final_response():
+                            response_text = event.content.parts[0].text
+                            break
+                            
+                    return response_text or "Sem resposta do agente"
+                
+                # Executa de forma assíncrona
+                response = asyncio.run(run_with_session())
+                
+                # Calcula duração e log de sucesso
+                duration_ms = (time.time() - start_time) * 1000
+                log_agent_response(
+                    agent_name="supervisor",
+                    session_id=session_id,
+                    response=response,
+                    duration_ms=duration_ms,
+                    correlation_id=correlation_id
+                )
+                
+                return response
+                
+            except Exception as e:
+                # Log detalhado do erro
+                duration_ms = (time.time() - start_time) * 1000
+                log_error(
+                    error=e,
+                    context="supervisor_agent_execution",
+                    agent_name="supervisor",
+                    session_id=session_id,
+                    correlation_id=correlation_id
+                )
+                
+                return f"⚠️ Erro no Supervisor: {str(e)}"
+    
+    return SupervisorWrapper(supervisor_agent, runner, session_service)
 
 
 if __name__ == "__main__":
     """Executa o agente supervisor usando Flask e A2A Protocol"""
     from flask import Flask, request, jsonify
+    import asyncio
     
     # Cria o agente ADK
     supervisor = create_supervisor_agent()
@@ -305,13 +463,40 @@ if __name__ == "__main__":
             data = request.get_json()
             prompt = data.get('prompt', data.get('message', ''))
             
-            # Executa o agente ADK
-            response = ""
-            for chunk in supervisor.run(prompt):
-                if isinstance(chunk, str):
-                    response += chunk
-                elif hasattr(chunk, 'content'):
-                    response += chunk.content
+            # Implementação simplificada usando as tools diretamente
+            # Detecta intenção e executa tool apropriada
+            
+            if 'iniciar' in prompt.lower() and ('debate' in prompt.lower() or 'minutos' in prompt.lower()):
+                # Extrai duração se especificada
+                import re
+                duration_match = re.search(r'(\d+)\s*minutos?', prompt.lower())
+                duration = int(duration_match.group(1)) if duration_match else 5
+                response = supervisor.tools[0].func(duration)  # start_debate_tool
+                
+            elif 'analisar' in prompt.lower() and 'debate' in prompt.lower():
+                response = supervisor.tools[1].func(prompt)  # analyze_debate_tool
+                
+            elif 'tempo' in prompt.lower() or 'status' in prompt.lower():
+                response = supervisor.tools[2].func()  # get_time_status_tool
+                
+            else:
+                # Resposta padrão do supervisor
+                response = f"""⚖️ **SUPERVISOR DE DEBATE ATIVO**
+
+📨 **Mensagem recebida:** {prompt[:100]}{'...' if len(prompt) > 100 else ''}
+
+🎯 **Comandos disponíveis:**
+• `iniciar debate X minutos` - Inicia debate com duração específica
+• `analisar debate [histórico]` - Análise técnica final
+• `status tempo` - Consulta status temporal
+
+🎓 **Especialidades:**
+• Retórica clássica e moderna
+• Psicologia cognitiva e persuasão  
+• Análise lógica de argumentos
+• Coordenação de debates
+
+⚖️ **Status:** Pronto para moderação imparcial"""
             
             return jsonify({"response": response})
             

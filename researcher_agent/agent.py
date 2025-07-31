@@ -4,11 +4,21 @@ Especialista neutro em pesquisa objetiva e fornecimento de dados factuais
 """
 
 import os
+import time
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 from google.adk.agents import LlmAgent
 from google.adk.tools import FunctionTool
+from google.adk.runners import Runner
+from google.adk.sessions import InMemorySessionService
+from google.genai import types
 from dotenv import load_dotenv
+
+# Sistema de log aprimorado
+from utils.enhanced_logger import (
+    enhanced_logger, log_agent_start, log_agent_response, 
+    log_tool_execution, log_error, LogLevel, LogCategory
+)
 
 # Carrega variáveis do .env
 load_dotenv()
@@ -214,7 +224,7 @@ def create_researcher_agent() -> LlmAgent:
     fact_check_function = FunctionTool(fact_check_tool)
     
     # Cria o agente usando Google ADK LlmAgent
-    researcher_agent = LlmAgent(
+    researcher_llm_agent = LlmAgent(
         name="researcher_agent", 
         model="gemini-2.0-flash",
         description="Especialista neutro em pesquisa objetiva e fornecimento de dados factuais sobre futebol brasileiro",
@@ -222,12 +232,136 @@ def create_researcher_agent() -> LlmAgent:
         tools=[search_data_function, provide_stats_function, fact_check_function]
     )
     
-    return researcher_agent
+    # Configura Runner para execução
+    session_service = InMemorySessionService()
+    runner = Runner(
+        agent=researcher_llm_agent,
+        app_name="researcher_agent",
+        session_service=session_service
+    )
+    
+    # Cria classe wrapper para adicionar método run
+    class ResearcherWrapper:
+        def __init__(self, agent, runner, session_service):
+            self.agent = agent
+            self.runner = runner
+            self.session_service = session_service
+            self.name = agent.name
+            self.description = agent.description
+            self.tools = agent.tools
+        
+        def run(self, prompt: str):
+            """Executa o researcher usando Runner ADK com logging aprimorado"""
+            import uuid
+            import asyncio
+            
+            session_id = f"session_{uuid.uuid4().hex[:8]}"
+            user_id = f"user_{uuid.uuid4().hex[:8]}"
+            start_time = time.time()
+            
+            # Log início da execução
+            correlation_id = log_agent_start(
+                agent_name="researcher",
+                session_id=session_id,
+                user_id=user_id,
+                prompt=prompt
+            )
+            
+            try:
+                async def run_with_session():
+                    # Log criação de sessão
+                    enhanced_logger.log(
+                        LogLevel.INFO,
+                        LogCategory.SESSION,
+                        f"Criando sessão para pesquisador neutro",
+                        agent_name="researcher",
+                        session_id=session_id,
+                        user_id=user_id,
+                        event_type="session_create",
+                        correlation_id=correlation_id
+                    )
+                    
+                    # Cria sessão de forma assíncrona
+                    await self.session_service.create_session(
+                        app_name="researcher_agent",
+                        user_id=user_id,
+                        session_id=session_id
+                    )
+                    
+                    content = types.Content(role="user", parts=[types.Part(text=prompt)])
+                    response_text = ""
+                    
+                    # Log início do processamento ADK
+                    enhanced_logger.log(
+                        LogLevel.INFO,
+                        LogCategory.AGENT,
+                        f"Pesquisador processando consulta: {prompt[:50]}...",
+                        agent_name="researcher",
+                        session_id=session_id,
+                        event_type="adk_processing_start",
+                        details={"prompt_type": "research_query", "content_length": len(prompt)},
+                        correlation_id=correlation_id
+                    )
+                    
+                    async for event in self.runner.run_async(
+                        user_id=user_id,
+                        session_id=session_id,
+                        new_message=content
+                    ):
+                        if event.is_final_response():
+                            response_text = event.content.parts[0].text
+                            break
+                            
+                    return response_text or "Sem resposta do agente"
+                
+                # Executa de forma assíncrona
+                response = asyncio.run(run_with_session())
+                
+                # Calcula duração e log de sucesso
+                duration_ms = (time.time() - start_time) * 1000
+                log_agent_response(
+                    agent_name="researcher",
+                    session_id=session_id,
+                    response=response,
+                    duration_ms=duration_ms,
+                    correlation_id=correlation_id
+                )
+                
+                # Log dados fornecidos
+                if "dados encontrados" in response.lower() or "estatísticas" in response.lower():
+                    enhanced_logger.log(
+                        LogLevel.INFO,
+                        LogCategory.AGENT,
+                        "Pesquisador forneceu dados objetivos",
+                        agent_name="researcher",
+                        session_id=session_id,
+                        event_type="data_provided",
+                        details={"data_detected": True, "response_length": len(response)},
+                        correlation_id=correlation_id
+                    )
+                
+                return response
+                
+            except Exception as e:
+                # Log detalhado do erro
+                duration_ms = (time.time() - start_time) * 1000
+                log_error(
+                    error=e,
+                    context="researcher_agent_execution",
+                    agent_name="researcher",
+                    session_id=session_id,
+                    correlation_id=correlation_id
+                )
+                
+                return f"📈 Erro no Pesquisador: {str(e)}"
+    
+    return ResearcherWrapper(researcher_llm_agent, runner, session_service)
 
 
 if __name__ == "__main__":
     """Executa o agente Researcher usando Flask e A2A Protocol"""
     from flask import Flask, request, jsonify
+    import asyncio
     
     # Cria o agente ADK
     researcher = create_researcher_agent()
@@ -271,14 +405,37 @@ if __name__ == "__main__":
             data = request.get_json()
             prompt = data.get('prompt', data.get('message', ''))
             
-            # Executa o agente ADK
-            response = ""
-            for chunk in researcher.run(prompt):
-                if isinstance(chunk, str):
-                    response += chunk
-                elif hasattr(chunk, 'content'):
-                    response += chunk.content
-            
+            # Implementação simplificada usando as tools diretamente
+            if 'pesquisa' in prompt.lower() or 'buscar' in prompt.lower():
+                response = researcher.tools[0].func(prompt)  # search_football_data_tool
+            elif 'estatistica' in prompt.lower() or 'dados' in prompt.lower():
+                # Detecta time na mensagem
+                if 'flamengo' in prompt.lower():
+                    response = researcher.tools[1].func('flamengo')  # provide_statistics_tool
+                elif 'fluminense' in prompt.lower():
+                    response = researcher.tools[1].func('fluminense')
+                else:
+                    response = researcher.tools[1].func('ambos')
+            elif 'verificar' in prompt.lower() or 'fato' in prompt.lower():
+                response = researcher.tools[2].func(prompt)  # fact_check_tool
+            else:
+                response = f"""📊 **PESQUISADOR NEUTRO ATIVO**
+
+🔍 **Consulta:** {prompt[:100]}{'...' if len(prompt) > 100 else ''}
+
+🎯 **Serviços disponíveis:**
+• `pesquisa [tema]` - Busca dados objetivos
+• `estatisticas [time]` - Dados detalhados do time
+• `verificar [afirmação]` - Checagem de fatos
+
+⚖️ **Especialidades:**
+• Dados históricos dos clubes
+• Comparações objetivas
+• Verificação de afirmações
+• Neutralidade absoluta
+
+📈 **Status:** Pronto para pesquisa imparcial"""
+                
             return jsonify({"response": response})
             
         except Exception as e:
