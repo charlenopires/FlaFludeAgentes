@@ -1,21 +1,26 @@
 """
 Interface Streamlit para Sistema de Debate Fla-Flu
-4 Agentes Independentes + Protocolo A2A + Google ADK
+4 Agentes Independentes + Protocolo A2A + Google ADK Oficial
 """
 
 import streamlit as st
 import time
 import json
+import asyncio
+import os
 from datetime import datetime
 from typing import Dict, Any, List
-from agents import (
-    get_supervisor, 
-    get_flamengo_agent, 
-    get_fluminense_agent, 
-    get_researcher,
-    get_system_status,
-    debate_system
-)
+import httpx
+from dotenv import load_dotenv
+
+# Importa agentes usando Google ADK oficial
+from supervisor_agent.agent import create_supervisor_agent
+from flamengo_agent.agent import create_flamengo_agent  
+from fluminense_agent.agent import create_fluminense_agent
+from researcher_agent.agent import create_researcher_agent
+
+# Carrega variáveis do .env
+load_dotenv()
 
 # --- Configuração da Página ---
 st.set_page_config(
@@ -141,6 +146,30 @@ def init_session_state():
         st.session_state.debate_duration = 0
     if 'agents_initialized' not in st.session_state:
         st.session_state.agents_initialized = False
+    if 'agents' not in st.session_state:
+        st.session_state.agents = {}
+
+def initialize_agents():
+    """Inicializa instâncias dos agentes ADK oficiais"""
+    if not st.session_state.agents:
+        try:
+            # Cria agentes usando Google ADK oficial
+            supervisor = create_supervisor_agent()
+            flamengo = create_flamengo_agent()
+            fluminense = create_fluminense_agent()
+            researcher = create_researcher_agent()
+            
+            st.session_state.agents = {
+                "supervisor": supervisor,
+                "flamengo": flamengo,
+                "fluminense": fluminense,
+                "researcher": researcher
+            }
+            add_backstage_log("✅ Agentes ADK oficiais inicializados com sucesso", "success")
+        except Exception as e:
+            st.session_state.agents = {}
+            add_backstage_log(f"❌ Erro ao inicializar agentes: {str(e)}", "error")
+    return st.session_state.agents
 
 def add_message(agent_name: str, message: str, message_type: str = "normal"):
     """Adiciona mensagem ao chat"""
@@ -169,10 +198,10 @@ def format_time(seconds: int) -> str:
 def get_agent_emoji(agent_name: str) -> str:
     """Retorna emoji do agente"""
     emojis = {
-        "Supervisor": "⚖️",
-        "Torcedor Flamengo": "🔴",
-        "Torcedor Fluminense": "🟢", 
-        "Pesquisador": "📊"
+        "Supervisor": "🤖⚖️",
+        "Torcedor Flamengo": "🤖🔴",
+        "Torcedor Fluminense": "🤖🟢", 
+        "Pesquisador": "🤖📊"
     }
     return emojis.get(agent_name, "🤖")
 
@@ -185,6 +214,44 @@ def get_message_class(agent_name: str) -> str:
         "Pesquisador": "researcher-msg"
     }
     return classes.get(agent_name, "chat-message")
+
+def get_debate_prompt(action: str, **kwargs) -> str:
+    """Gera prompts para diferentes ações dos agentes"""
+    prompts = {
+        "start_debate": f"Inicie um debate de {kwargs.get('duration', 5)} minutos entre torcedores do Flamengo e Fluminense.",
+        "analyze_debate": f"Analise este debate completo e determine o vencedor: {kwargs.get('history', '')}",
+        "initial_argument_flamengo": "Apresente seus argumentos iniciais defendendo o Flamengo.",
+        "initial_argument_fluminense": "Apresente seus argumentos iniciais defendendo o Fluminense.",
+        "counter_argument": f"Rebata este argumento do oponente: {kwargs.get('opponent_text', '')}",
+        "research_query": f"Pesquise dados sobre: {kwargs.get('query', '')}"
+    }
+    return prompts.get(action, "Responda de forma apropriada.")
+
+async def run_agent_async(agent, prompt: str) -> str:
+    """Executa agente de forma assíncrona usando ADK oficial"""
+    try:
+        response = ""
+        async for chunk in agent.run(prompt):
+            if isinstance(chunk, str):
+                response += chunk
+            elif hasattr(chunk, 'content'):
+                response += chunk.content
+        return response or "Sem resposta do agente"
+    except Exception as e:
+        return f"❌ Erro: {str(e)}"
+
+def run_agent_sync(agent, prompt: str) -> str:
+    """Executa agente de forma síncrona usando ADK oficial"""
+    try:
+        response = ""
+        for chunk in agent.run(prompt):
+            if isinstance(chunk, str):
+                response += chunk
+            elif hasattr(chunk, 'content'):
+                response += chunk.content
+        return response or "Sem resposta do agente"
+    except Exception as e:
+        return f"❌ Erro: {str(e)}"
 
 # --- Inicialização ---
 init_session_state()
@@ -229,11 +296,9 @@ with col1:
         if st.button("🚀 **Inicializar Sistema de Agentes**", key="init_agents"):
             with st.spinner("🤖 Carregando agentes ADK..."):
                 try:
-                    # Inicializa agentes
-                    supervisor = get_supervisor()
-                    flamengo = get_flamengo_agent()
-                    fluminense = get_fluminense_agent()
-                    researcher = get_researcher()
+                    # Inicializa agentes usando nova estrutura
+                    agents = initialize_agents()
+                    supervisor = agents['supervisor']
                     
                     st.session_state.agents_initialized = True
                     add_backstage_log("Sistema A2A inicializado com sucesso", "success")
@@ -299,21 +364,27 @@ Por favor, **quantos minutos** deve durar nosso debate Flamengo vs Fluminense?
                 st.markdown("<br>", unsafe_allow_html=True)
                 if st.button("🎬 **INICIAR DEBATE**", key="start_debate", use_container_width=True):
                     with st.spinner("⚖️ Supervisor iniciando debate..."):
-                        supervisor = get_supervisor()
-                        start_result = supervisor.start_debate(debate_duration)
+                        agents = initialize_agents()
+                        supervisor = agents['supervisor']
+                        # Temporário: chama método sync (será atualizado para async)
+                        # Usa supervisor ADK oficial para iniciar debate
+                        supervisor = agents['supervisor']
+                        prompt = get_debate_prompt("start_debate", duration=debate_duration)
+                        start_result = run_agent_sync(supervisor, prompt)
                         
-                        if start_result["status"] == "success":
+                        if "❌" not in start_result:
                             st.session_state.debate_active = True
                             st.session_state.debate_duration = debate_duration
                             st.session_state.current_turn = "Flamengo"
+                            st.session_state.debate_start_time = time.time()
                             
-                            add_message("Supervisor", start_result["message"], "system")
+                            add_message("Supervisor", start_result, "system")
                             add_backstage_log(f"Debate iniciado: {debate_duration} minutos", "success")
                             add_backstage_log("Flamengo vai começar!", "info")
                             
                             st.rerun()
                         else:
-                            st.error(f"❌ Erro: {start_result['message']}")
+                            st.error(f"❌ Erro: {start_result}")
             
             st.markdown('</div>', unsafe_allow_html=True)
         
@@ -321,10 +392,11 @@ Por favor, **quantos minutos** deve durar nosso debate Flamengo vs Fluminense?
         elif st.session_state.debate_active and not st.session_state.debate_finished:
             
             # Verifica tempo restante
-            supervisor = get_supervisor()
-            time_info = supervisor.get_time_remaining()
+            elapsed_time = time.time() - st.session_state.debate_start_time
+            total_time = st.session_state.debate_duration * 60
+            time_remaining = total_time - elapsed_time
             
-            if time_info["total_remaining"] <= 0:
+            if time_remaining <= 0:
                 # Tempo esgotado - análise final
                 st.session_state.debate_finished = True
                 st.session_state.debate_active = False
@@ -332,20 +404,29 @@ Por favor, **quantos minutos** deve durar nosso debate Flamengo vs Fluminense?
                 add_backstage_log("⏰ Tempo esgotado! Iniciando análise final", "warning")
                 
                 with st.spinner("🧠 Supervisor analisando debate..."):
-                    analysis_result = supervisor.analyze_final_debate(st.session_state.debate_messages)
+                    agents = initialize_agents()
+                    supervisor = agents['supervisor']
+                    # Monta histórico do debate
+                    debate_history = "\n\n".join([f"{msg['agent']}: {msg['message']}" for msg in st.session_state.debate_messages])
                     
-                    if analysis_result["status"] == "success":
-                        add_message("Supervisor", analysis_result["message"], "final")
+                    # Usa supervisor ADK oficial para análise
+                    supervisor = agents['supervisor']
+                    prompt = get_debate_prompt("analyze_debate", history=debate_history)
+                    analysis_result = run_agent_sync(supervisor, prompt)
+                    
+                    if "❌" not in analysis_result:
+                        add_message("Supervisor", analysis_result, "final")
                         add_backstage_log("Análise final concluída", "success")
                     else:
-                        add_message("Supervisor", f"Erro na análise: {analysis_result['message']}", "error")
+                        add_message("Supervisor", f"Erro na análise: {analysis_result}", "error")
                 
                 st.balloons()
                 st.rerun()
             
             else:
                 # Continua debate
-                current_agent = get_flamengo_agent() if st.session_state.current_turn == "Flamengo" else get_fluminense_agent()
+                agents = initialize_agents()
+                current_agent = agents['flamengo'] if st.session_state.current_turn == "Flamengo" else agents['fluminense']
                 agent_name = f"Torcedor {st.session_state.current_turn}"
                 
                 with st.spinner(f"🤔 {agent_name} preparando argumento..."):
@@ -353,7 +434,10 @@ Por favor, **quantos minutos** deve durar nosso debate Flamengo vs Fluminense?
                     
                     # Gera argumento
                     if len(st.session_state.debate_messages) <= 2:  # Primeiro argumento
-                        argument_result = current_agent.get_initial_argument()
+                        # Usa agente ADK oficial para argumento inicial
+                        prompt_key = f"initial_argument_{st.session_state.current_turn.lower()}"
+                        prompt = get_debate_prompt(prompt_key)
+                        argument_result = run_agent_sync(current_agent, prompt)
                     else:
                         # Busca último argumento do oponente
                         if st.session_state.current_turn == "Fluminense":
@@ -362,21 +446,29 @@ Por favor, **quantos minutos** deve durar nosso debate Flamengo vs Fluminense?
                             opponent_messages = [m for m in st.session_state.debate_messages if "fluminense" in m["agent"].lower()]
                         last_opponent = opponent_messages[-1]["message"] if opponent_messages else ""
                         
-                        # Verifica se precisa de pesquisa
-                        research_data = None
-                        if "PESQUISADOR:" in last_opponent.upper():
-                            researcher = get_researcher()
-                            research_result = researcher.search_data(f"dados sobre {st.session_state.current_turn}", agent_name)
-                            if research_result["status"] == "success":
-                                research_data = research_result["message"]
-                                add_message("Pesquisador", research_result["message"], "research")
-                                add_backstage_log("Pesquisa realizada", "info")
-                        
-                        argument_result = current_agent.counter_argument(last_opponent, research_data)
+                        # Usa agente ADK oficial para contra-argumento
+                        prompt = get_debate_prompt("counter_argument", opponent_text=last_opponent)
+                        argument_result = run_agent_sync(current_agent, prompt)
                     
-                    if argument_result["status"] == "success":
-                        add_message(agent_name, argument_result["message"], "argument")
-                        add_backstage_log(f"{agent_name} argumentou", "info")
+                    if "❌" not in argument_result:
+                        message_content = argument_result
+                        add_message(agent_name, message_content, "argument")
+                        
+                        # Processa solicitações de pesquisa no argumento atual
+                        if "[PESQUISA]" in message_content.upper():
+                            researcher = agents['researcher']
+                            import re
+                            pesquisa_pattern = r'\[PESQUISA\](.*?)\[/PESQUISA\]'
+                            matches = re.findall(pesquisa_pattern, message_content, re.IGNORECASE)
+                            
+                            for query in matches:
+                                # Usa pesquisador para solicitar dados
+                                prompt = get_debate_prompt("research_query", query=query.strip())
+                                research_result = run_agent_sync(researcher, prompt)
+                                add_message("Pesquisador", research_result, "research")
+                                add_backstage_log(f"A2A: {agent_name} solicitou pesquisa: '{query[:30]}...'", "info")
+                        
+                        add_backstage_log(f"A2A: {agent_name} enviou argumento", "info")
                         
                         # Alterna turno
                         st.session_state.current_turn = "Fluminense" if st.session_state.current_turn == "Flamengo" else "Flamengo"
@@ -384,22 +476,27 @@ Por favor, **quantos minutos** deve durar nosso debate Flamengo vs Fluminense?
                         time.sleep(1)
                         st.rerun()
                     else:
-                        st.error(f"❌ Erro no agente: {argument_result['message']}")
+                        st.error(f"❌ Erro no agente: {argument_result}")
 
 with col2:
     # --- Painel Lateral: Bastidores ---
     st.markdown("### 🎭 **Bastidores dos Agentes**")
     
     # Status dos agentes
-    system_status = get_system_status()
+    agents = initialize_agents() if st.session_state.agents_initialized else {}
+    system_status = {
+        'agents_loaded': len(agents),
+        'total_messages': 0,
+        'active_debate': st.session_state.debate_active
+    }
     
     st.markdown("#### 🤖 **Status dos Agentes**")
     
     agents_info = [
-        ("Supervisor", "⚖️", "Coordenador"),
-        ("Flamengo", "🔴", "Torcedor"),
-        ("Fluminense", "🟢", "Torcedor"), 
-        ("Pesquisador", "📊", "Dados")
+        ("Supervisor", "🤖⚖️", "Coordenador IA"),
+        ("Flamengo", "🤖🔴", "Torcedor IA"),
+        ("Fluminense", "🤖🟢", "Torcedor IA"), 
+        ("Pesquisador", "🤖📊", "Pesquisador IA")
     ]
     
     for agent_name, emoji, role in agents_info:
@@ -434,9 +531,9 @@ with col2:
     
     # Timer do debate
     if st.session_state.debate_active:
-        supervisor = get_supervisor()
-        time_info = supervisor.get_time_remaining()
-        remaining = int(time_info["total_remaining"])
+        elapsed_time = time.time() - st.session_state.debate_start_time
+        total_time = st.session_state.debate_duration * 60
+        remaining = int(total_time - elapsed_time)
         
         timer_color = "status-active" if remaining > 60 else "status-waiting" if remaining > 30 else "status-finished"
         
@@ -452,8 +549,37 @@ with col2:
     
     backstage_container = st.container()
     with backstage_container:
+        # Mostra mensagens A2A do orquestrador
+        a2a_messages = a2a_orchestrator.get_message_log(10)
+        
+        if a2a_messages:
+            for msg in reversed(a2a_messages):
+                msg_type = msg["type"]
+                icon_map = {
+                    "discovery": "🔍",
+                    "a2a_message": "📤",
+                    "a2a_response": "📥",
+                    "a2a_error": "❌"
+                }
+                icon = icon_map.get(msg_type, "📝")
+                
+                # Extrai timestamp formatado
+                try:
+                    dt = datetime.fromisoformat(msg["timestamp"].replace('Z', '+00:00'))
+                    formatted_time = dt.strftime('%H:%M:%S')
+                except:
+                    formatted_time = msg["timestamp"][:8]
+                
+                st.markdown(f"""
+                <div class="backstage-panel">
+                    <small><strong>{formatted_time}</strong></small><br>
+                    {icon} <strong>A2A:</strong> {msg['description']}
+                </div>
+                """, unsafe_allow_html=True)
+        
+        # Mostra também logs locais
         if st.session_state.backstage_log:
-            for log in reversed(st.session_state.backstage_log[-10:]):  # Últimos 10
+            for log in reversed(st.session_state.backstage_log[-5:]):  # Últimos 5
                 icon = {"info": "ℹ️", "success": "✅", "warning": "⚠️", "error": "❌"}.get(log["type"], "📝")
                 
                 st.markdown(f"""
@@ -462,18 +588,38 @@ with col2:
                     {icon} {log['message']}
                 </div>
                 """, unsafe_allow_html=True)
-        else:
-            st.markdown("*Nenhum evento registrado ainda...*")
+        
+        if not a2a_messages and not st.session_state.backstage_log:
+            st.markdown("*Nenhum evento A2A registrado ainda...*")
     
     # Protocolo A2A Info
     st.markdown("#### 🔗 **Protocolo A2A**")
+    
+    # Status do orquestrador A2A
+    a2a_status = a2a_orchestrator.get_agent_status()
+    
     st.markdown(f"""
     <div class="backstage-panel">
-        <strong>Mensagens trocadas:</strong> {len(debate_system.message_log)}<br>
-        <strong>Agentes ativos:</strong> {system_status['agents_loaded']}<br>
-        <strong>Status:</strong> {'🟢 ATIVO' if st.session_state.debate_active else '🟡 AGUARDANDO'}
+        <strong>Agentes A2A registrados:</strong> {a2a_status['total_agents']}<br>
+        <strong>Mensagens A2A:</strong> {a2a_status['total_messages']}<br>
+        <strong>Debate ativo:</strong> {'🟢 SIM' if st.session_state.debate_active else '🟡 NÃO'}<br>
+        <strong>Última atividade:</strong> {a2a_status['last_activity'][:8] if a2a_status['last_activity'] else 'Nenhuma'}
     </div>
     """, unsafe_allow_html=True)
+    
+    # Botão para verificar status dos agentes A2A
+    if st.button("🔍 **Verificar Agentes A2A**", help="Testa conectividade dos agentes"):
+        with st.spinner("Verificando agentes A2A..."):
+            ping_results = a2a_orchestrator.ping_all_agents()
+            
+            for agent_name, is_online in ping_results.items():
+                status_emoji = "🟢" if is_online else "🔴"
+                st.write(f"{status_emoji} {agent_name}: {'Online' if is_online else 'Offline'}")
+        
+        if all(ping_results.values()):
+            st.success("✅ Todos os agentes A2A estão online!")
+        else:
+            st.warning("⚠️ Alguns agentes A2A estão offline. Inicie os servidores A2A.")
 
 # --- Controles Finais ---
 st.markdown("---")
@@ -503,8 +649,7 @@ with col_export:
 with col_status:
     if st.button("📊 **Status Completo**", help="Informações detalhadas"):
         if st.session_state.agents_initialized:
-            status = get_system_status()
-            st.json(status)
+            st.json(system_status)
 
 # --- Footer ---
 st.markdown("---")

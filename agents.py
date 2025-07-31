@@ -102,7 +102,7 @@ class SupervisorAgent(BaseAgent):
         self.fluminense_time = 0
         
         self.system_prompt = """
-        Você é um SUPERVISOR DE DEBATE especialista em:
+        Você é um SUPERVISOR DE DEBATE NEUTRO especialista em:
         - Retórica e persuasão
         - Psicologia cognitiva
         - Linguística aplicada
@@ -114,7 +114,8 @@ class SupervisorAgent(BaseAgent):
         3. Determinar vencedor baseado em critérios técnicos
         4. Manter neutralidade absoluta
         
-        SEMPRE mantenha tom profissional e imparcial.
+        CRÍTICO: Você NÃO tem preferência por nenhum time. Seja sempre imparcial, profissional e técnico.
+        JAMAIS demonstre torcida ou parcialidade. Analise apenas a qualidade dos argumentos.
         """
     
     def start_debate(self, duration_minutes: int) -> Dict[str, Any]:
@@ -212,38 +213,23 @@ class FlamengoAgent(BaseAgent):
     def __init__(self):
         super().__init__("Torcedor Flamengo", "Defensor Rubro-Negro")
         
-        self.persuasion_text = """
-        🔴⚡ **FLAMENGO - A NAÇÃO RUBRO-NEGRA** ⚡🔴
-        
-        Somos o MAIOR clube do Brasil! Com mais de 40 milhões de torcedores apaixonados, 
-        o Flamengo não é apenas um time - é um sentimento que move o país!
-        
-        🏆 **NOSSOS TÍTULOS FALAM POR SI:**
-        • 8 Brasileirões (mais que qualquer rival carioca)
-        • 3 Libertadores (incluindo as gloriosas de 2019 e 2022)
-        • 1 Mundial (1981 - Zico eterno!)
-        • Mais de 35 Cariocas
-        
-        ⭐ **ESTRELAS MUNDIAIS:**
-        De Zico a Vinícius Jr., formamos e revelamos os maiores talentos do futebol mundial.
-        Gabigol, Pedro, Arrascaeta - nosso elenco atual é FENOMENAL!
-        
-        💪 **FORÇA INCOMPARÁVEL:**
-        Somos o time com maior torcida, maior estrutura, maiores investimentos e maior paixão.
-        O Maracanã vira um CALDEIRÃO quando jogamos!
-        
-        🔥 Uma vez Flamengo, sempre Flamengo! MENGO é RAÇA, é GARRA, é VITÓRIA!
-        """
+        self.team_facts = {
+            "titulos": "8 Brasileirões, 3 Libertadores, 1 Mundial (1981), 37+ Cariocas",
+            "torcida": "Uma das maiores torcidas do Brasil",
+            "tradicao": "Clube fundado em 1895, com rica história no futebol brasileiro",
+            "jogadores": "Revelou grandes craques como Zico, Gabigol, Vinícius Jr."
+        }
         
         self.system_prompt = f"""
-        {self.persuasion_text}
+        Você é um TORCEDOR APAIXONADO do Flamengo. Sua missão:
+        1. Defender o Flamengo com PAIXÃO e DADOS FACTUAIS: {self.team_facts}
+        2. Usar argumentos emocionais E estatísticas verificáveis
+        3. Quando precisar de dados específicos, use a tag [PESQUISA]sua pergunta[/PESQUISA]
+        4. Manter sempre respeito ao adversário, mas ser convincente
+        5. Focar na grandeza histórica e conquistas do Flamengo
         
-        Você é um TORCEDOR FANÁTICO do Flamengo. Sua missão:
-        1. Defender o Flamengo com PAIXÃO e DADOS
-        2. Usar argumentos emocionais E factuais
-        3. Provocar o rival com inteligência
-        4. Solicitar dados ao pesquisador quando necessário
-        5. NUNCA admitir derrota - somos SUPERIORES!
+        IMPORTANTE: Se precisar de informações que não tem certeza, SEMPRE solicite ao pesquisador
+        usando [PESQUISA]pergunta específica[/PESQUISA]
         
         Mantenha o tom apaixonado mas respeitoso. Use emojis do Flamengo: 🔴⚡🏆
         """
@@ -271,12 +257,17 @@ class FlamengoAgent(BaseAgent):
         
         O torcedor do Fluminense disse: "{opponent_message}"
         
-        CONTRA-ATAQUE com argumentos devastadores! Use paixão, dados e lógica para
-        destronar completamente esse argumento fraco. Se necessário, solicite dados
-        ao pesquisador mencionando "PESQUISADOR: [sua solicitação]".
+        RESPONDA com argumentos sólidos baseados em fatos! Use paixão, dados e lógica.
+        Se precisar de informações específicas, use [PESQUISA]sua pergunta[/PESQUISA].
         """
         
         return self.send_message(prompt, context)
+    
+    def process_research_request(self, message_content: str) -> List[str]:
+        """Extrai solicitações de pesquisa da mensagem"""
+        import re
+        research_pattern = r'\[PESQUISA\](.*?)\[/PESQUISA\]'
+        return re.findall(research_pattern, message_content, re.IGNORECASE)
 
 class FluminenseAgent(BaseAgent):
     """Agente Torcedor do Fluminense"""
@@ -284,38 +275,23 @@ class FluminenseAgent(BaseAgent):
     def __init__(self):
         super().__init__("Torcedor Fluminense", "Defensor Tricolor")
         
-        self.persuasion_text = """
-        💚🤍❤️ **FLUMINENSE - TRADIÇÃO E ELEGÂNCIA** ❤️🤍💚
-        
-        Somos o time mais TRADICIONAL do Rio de Janeiro! Fundado em 1902, 
-        carregamos mais de 120 anos de história, classe e futebol-arte!
-        
-        🏆 **NOSSA GLORIOSA HISTÓRIA:**
-        • 4 Brasileirões conquistados com muito suor
-        • CAMPEÕES DA LIBERTADORES 2023 (ATUAL CAMPEÃO!)
-        • Mais de 30 Cariocas com futebol de qualidade
-        • Formamos os maiores craques da Seleção
-        
-        ⭐ **ESCOLA DE CRAQUES:**
-        Didi, Carlos Alberto Torres, Rivellino, Fred - revelamos LENDAS do futebol!
-        Germán Cano, Ganso, Jhon Arias - nosso atual elenco é TÉCNICO e QUALIFICADO!
-        
-        🎭 **FUTEBOL-ARTE:**
-        Não jogamos apenas futebol - fazemos ARTE em campo! 
-        Temos estilo, elegância e a torcida mais refinada do Brasil!
-        
-        ✨ Somos tricolores de coração! FLU é TRADIÇÃO, é CLASSE, é CONQUISTA!
-        """
+        self.team_facts = {
+            "titulos": "4 Brasileirões, 1 Libertadores (2023), 1 Copa do Brasil, 32+ Cariocas",
+            "tradicao": "Clube mais tradicional do Rio (fundado em 1902), 120+ anos de história",
+            "futebol_arte": "Conhecido pelo futebol elegante e técnico",
+            "jogadores": "Revelou craques como Didi, Carlos Alberto Torres, Rivellino, Fred"
+        }
         
         self.system_prompt = f"""
-        {self.persuasion_text}
-        
         Você é um TORCEDOR ORGULHOSO do Fluminense. Sua missão:
-        1. Defender o Fluminense com ELEGÂNCIA e TRADIÇÃO
-        2. Usar a rica história e conquistas recentes
-        3. Destacar nossa superioridade técnica e cultural
-        4. Solicitar dados ao pesquisador quando necessário
-        5. Mostrar nossa CLASSE superior ao rival
+        1. Defender o Fluminense com ELEGÂNCIA usando DADOS FACTUAIS: {self.team_facts}
+        2. Destacar tradição, conquistas recentes (Libertadores 2023) e futebol-arte
+        3. Quando precisar de dados específicos, use a tag [PESQUISA]sua pergunta[/PESQUISA]
+        4. Manter sempre classe e respeito, mas ser convincente
+        5. Focar na tradição centenária e conquistas técnicas do Fluminense
+        
+        IMPORTANTE: Se precisar de informações que não tem certeza, SEMPRE solicite ao pesquisador
+        usando [PESQUISA]pergunta específica[/PESQUISA]
         
         Mantenha tom elegante mas firme. Use emojis do Fluminense: 💚🤍❤️✨🏆
         """
@@ -344,12 +320,17 @@ class FluminenseAgent(BaseAgent):
         
         O torcedor do Flamengo disse: "{opponent_message}"
         
-        RESPONDA com CLASSE e ELEGÂNCIA! Use nossa tradição, conquistas recentes e
-        superioridade técnica para desmontar esse argumento. Se necessário, solicite dados
-        ao pesquisador mencionando "PESQUISADOR: [sua solicitação]".
+        RESPONDA com CLASSE e argumentos sólidos! Use nossa tradição e conquistas.
+        Se precisar de informações específicas, use [PESQUISA]sua pergunta[/PESQUISA].
         """
         
         return self.send_message(prompt, context)
+    
+    def process_research_request(self, message_content: str) -> List[str]:
+        """Extrai solicitações de pesquisa da mensagem"""
+        import re
+        research_pattern = r'\[PESQUISA\](.*?)\[/PESQUISA\]'
+        return re.findall(research_pattern, message_content, re.IGNORECASE)
 
 class ResearcherAgent(BaseAgent):
     """Agente Pesquisador - Busca dados na internet"""
@@ -463,7 +444,8 @@ class A2AProtocol:
             "message": message,
             "context": context or {},
             "timestamp": time.time(),
-            "protocol": "A2A-v1.0"
+            "protocol": "A2A-v1.0",
+            "message_id": f"a2a_{int(time.time() * 1000)}_{from_agent}_{to_agent}"
         }
         
         self.message_log.append(a2a_message)
@@ -478,6 +460,28 @@ class A2AProtocol:
             "response": response
         }
     
+    def process_research_requests(self, agent_name: str, message_content: str) -> List[Dict[str, Any]]:
+        """Processa solicitações de pesquisa em uma mensagem e retorna respostas"""
+        if agent_name not in ["flamengo", "fluminense"]:
+            return []
+        
+        import re
+        research_pattern = r'\[PESQUISA\](.*?)\[/PESQUISA\]'
+        research_requests = re.findall(research_pattern, message_content, re.IGNORECASE)
+        
+        research_responses = []
+        for request in research_requests:
+            # Envia solicitação via A2A para o pesquisador
+            a2a_response = self.send_message(agent_name, "researcher", f"Pesquisa solicitada: {request}")
+            if a2a_response["status"] == "success":
+                research_responses.append({
+                    "request": request,
+                    "response": a2a_response["response"]["message"],
+                    "a2a_log": a2a_response["a2a_message"]
+                })
+        
+        return research_responses
+    
     def get_agent(self, agent_name: str) -> BaseAgent:
         """Retorna instância do agente"""
         return self.agents.get(agent_name)
@@ -488,8 +492,13 @@ class A2AProtocol:
             "agents_loaded": len(self.agents),
             "total_messages": len(self.message_log),
             "active_debate": self.active_debate,
-            "agents_status": {name: agent.get_status() for name, agent in self.agents.items()}
+            "agents_status": {name: agent.get_status() for name, agent in self.agents.items()},
+            "recent_a2a_messages": self.message_log[-5:] if self.message_log else []
         }
+    
+    def get_a2a_logs(self, limit: int = 10) -> List[Dict[str, Any]]:
+        """Retorna logs de mensagens A2A recentes"""
+        return self.message_log[-limit:] if self.message_log else []
 
 # Instância global do sistema A2A
 debate_system = A2AProtocol()
@@ -509,3 +518,9 @@ def get_researcher() -> ResearcherAgent:
 
 def get_system_status() -> Dict[str, Any]:
     return debate_system.get_system_status()
+
+def get_a2a_logs(limit: int = 10) -> List[Dict[str, Any]]:
+    return debate_system.get_a2a_logs(limit)
+
+def process_agent_research_requests(agent_name: str, message_content: str) -> List[Dict[str, Any]]:
+    return debate_system.process_research_requests(agent_name, message_content)
