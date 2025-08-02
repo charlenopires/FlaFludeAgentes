@@ -1,26 +1,27 @@
-# 🔥 Fla-Flu Debate: Sistema Multi-Agente A2A
+# 🔥 FlaFludeAgentes: Sistema Multi-Agente A2A
 
-Sistema inteligente de debate entre torcedores usando **4 agentes independentes** que se comunicam via **protocolo A2A** (Agent-to-Agent) baseado no **Google ADK**.
+Sistema inteligente de debate entre torcedores do Flamengo e Fluminense usando **4 agentes independentes** que se comunicam via **protocolo A2A** (Agent-to-Agent) implementando padrões do **Google ADK**.
 
 ## 🎯 **Visão Geral**
 
-Este projeto implementa um sistema de debate automatizado entre Flamengo e Fluminense, onde 4 agentes especializados interagem de forma autônoma para criar debates dinâmicos e informativos.
+Este projeto implementa um sistema de debate automatizado entre Flamengo e Fluminense, onde 4 agentes especializados rodam como servidores A2A independentes e interagem de forma autônoma para criar debates dinâmicos e informativos.
 
-### 🤖 **Os 4 Agentes**
+### 🤖 **Os 4 Agentes A2A**
 
-1. **⚖️ Supervisor**: Coordena o debate, divide o tempo (50% para cada time) e analisa o vencedor baseado em critérios de retórica, psicologia e linguística
-2. **🔴 Torcedor Flamengo**: Defende o Flamengo com paixão, dados e argumentos demolidores
-3. **🟢 Torcedor Fluminense**: Argumenta com elegância sobre a tradição e superioridade tricolor
-4. **📊 Pesquisador**: Busca dados objetivos na internet para embasar os argumentos dos torcedores
+1. **⚖️ Supervisor Agent** (Port 8002): Coordena o debate de forma completamente neutra, gerencia turnos e analisa o vencedor baseado em critérios técnicos de retórica e persuasão
+2. **🔴 Flamengo Agent** (Port 8003): Defende o Flamengo com paixão, usando dados e argumentos convincentes
+3. **🟢 Fluminense Agent** (Port 8004): Argumenta com elegância sobre a tradição e superioridade tricolor
+4. **📊 Researcher Agent** (Port 8005): Fornece dados objetivos e neutros para embasar os argumentos dos torcedores
 
 ## 🛠️ **Tecnologias**
 
 - **Google ADK**: Padrões oficiais do Agent Development Kit
-- **Protocolo A2A v1.0**: Comunicação Agent-to-Agent padronizada
-- **Google Gemini AI**: LLM para processamento de linguagem natural
+- **Protocolo A2A v1.0**: Comunicação Agent-to-Agent com agent cards
+- **Google Gemini 2.0 Flash**: LLM para processamento de linguagem natural
 - **Streamlit**: Interface web interativa moderna
-- **Python 3.12+**: Backend do sistema
+- **Python 3.8+**: Backend do sistema com asyncio
 - **UV**: Gerenciamento de dependências
+- **HTTP/JSON**: Comunicação entre agentes via REST APIs
 
 ## ⚡ **Funcionalidades**
 
@@ -44,56 +45,79 @@ Este projeto implementa um sistema de debate automatizado entre Flamengo e Flumi
 
 ### 📋 **Pré-requisitos**
 ```bash
-# Python 3.12+
+# Python 3.8+
 # UV package manager
 # Google API Key (Gemini)
 ```
 
-### 🔧 **Instalação**
+### 🔧 **Instalação e Execução**
 ```bash
 # 1. Clone o repositório
 git clone https://github.com/seu-usuario/FlaFludeAgentes.git
 cd FlaFludeAgentes
 
-# 2. Configure a API Key no arquivo .env
-echo "GOOGLE_API_KEY=sua_chave_aqui" > .env
-
-# 3. Instale dependências com UV
+# 2. Instale dependências com UV
 uv sync
 
-# 4. Execute o sistema
+# 3. Inicie os servidores A2A (em um terminal)
+uv run python start_a2a_servers.py
+
+# 4. Execute a aplicação Streamlit (em outro terminal)
 uv run streamlit run app.py
 ```
 
-### 🌐 **Acesso**
-Abra http://localhost:8501 no navegador e:
+### 🌐 **Acesso e Configuração**
+1. **Abra http://localhost:8501** no navegador
+2. **Configure sua Google API Key** na interface
+3. **Clique em "Inicializar Sistema"** para descobrir agentes A2A
+4. **Configure duração do debate** (2-10 minutos)  
+5. **Clique em "Iniciar Debate"**
+6. **Acompanhe o debate em tempo real**
+7. **Veja a análise final do supervisor**
 
-1. **Clique em "Inicializar Sistema"**
-2. **Configure duração do debate** (2-10 minutos)
-3. **Clique em "Iniciar Debate"**
-4. **Acompanhe o debate em tempo real**
-5. **Veja a análise final do supervisor**
+### 🔌 **Servidores A2A Individuais**
+Os agentes rodam como servidores independentes:
+```bash
+# Iniciar agentes individualmente (opcional)
+uv run python -m supervisor_agent.agent    # Port 8002
+uv run python -m flamengo_agent.agent      # Port 8003  
+uv run python -m fluminense_agent.agent    # Port 8004
+uv run python -m researcher_agent.agent    # Port 8005
+```
+
+### 🕸️ **Agent Discovery**
+Cada agente expõe seu Agent Card A2A:
+- http://localhost:8002/.well-known/agent.json (Supervisor)
+- http://localhost:8003/.well-known/agent.json (Flamengo)
+- http://localhost:8004/.well-known/agent.json (Fluminense)
+- http://localhost:8005/.well-known/agent.json (Researcher)
 
 ## 🔗 **Protocolo A2A**
 
-O sistema implementa comunicação Agent-to-Agent seguindo padrões:
+O sistema implementa comunicação Agent-to-Agent seguindo padrões JSON-RPC 2.0:
 
-```python
-# Exemplo de mensagem A2A
+```json
 {
-    "from": "flamengo",
-    "to": "researcher", 
-    "message": "PESQUISADOR: busque dados sobre títulos recentes",
-    "context": {"debate_topic": "superioridade", "timestamp": 1640995200},
-    "protocol": "A2A-v1.0"
+  "jsonrpc": "2.0",
+  "id": "a2a_1234567890_flamengo_researcher",
+  "method": "conduct_research",
+  "params": {
+    "query": "Flamengo vs Fluminense recent titles comparison",
+    "requesting_agent": "flamengo_agent"
+  },
+  "from_agent": "flamengo_agent",
+  "to_agent": "researcher_agent", 
+  "timestamp": "2024-01-01T12:00:00Z",
+  "protocol": "A2A-v1.0"
 }
 ```
 
 ### 📊 **Métricas A2A**
-- Mensagens trocadas entre agentes
-- Latência de resposta
-- Taxa de sucesso das comunicações
-- Status de cada agente em tempo real
+- **Agent Discovery**: Descoberta automática via Agent Cards
+- **Message Routing**: Roteamento HTTP entre agentes
+- **State Sync**: Sincronização de estado do debate
+- **Health Checks**: Monitoramento em tempo real
+- **Logging**: Registro completo de comunicações A2A
 
 ## 🧠 **Especialidades dos Agentes**
 
@@ -125,22 +149,29 @@ O sistema implementa comunicação Agent-to-Agent seguindo padrões:
 
 ```
 FlaFludeAgentes/
-├── agents.py              # 4 agentes independentes + A2A
-├── app.py                 # Interface Streamlit avançada
-├── test_system.py         # Testes dos agentes
-├── .env                   # Configuração da API
-├── .env.example           # Template de configuração
-├── pyproject.toml         # Dependências UV
-├── README.md              # Documentação
-├── debate_system/         # Sistema ADK-compatible
+├── 🤖 supervisor_agent/
 │   ├── __init__.py
-│   └── agent.py
-├── tests/                 # Testes unitários
-│   └── test_agents.py
-├── eval/                  # Sistema de avaliação
-│   └── debate_evaluation.py
-└── deployment/            # Deploy Vertex AI
-    └── vertex_ai_deploy.py
+│   └── agent.py           # SupervisorAgent - Moderador neutro
+├── 🤖 flamengo_agent/
+│   ├── __init__.py  
+│   └── agent.py           # FlamengoAgent - Torcedor rubro-negro
+├── 🤖 fluminense_agent/
+│   ├── __init__.py
+│   └── agent.py           # FluminenseAgent - Torcedor tricolor
+├── 🤖 researcher_agent/
+│   ├── __init__.py
+│   └── agent.py           # ResearcherAgent - Pesquisador neutro
+├── 🚀 start_a2a_servers.py  # Inicia todos os servidores A2A
+├── 📱 app.py                # Interface Streamlit principal
+├── 🛠️ utils/
+│   ├── __init__.py
+│   ├── enhanced_logger.py   # Sistema de logging avançado
+│   └── log_viewer.py        # Visualizador de logs
+├── 📊 logs/                 # Logs do sistema A2A
+├── 📋 prompts.py            # Prompts de referência
+├── ⚙️ pyproject.toml        # Dependências UV
+├── 📖 CLAUDE.md             # Instruções para Claude Code
+└── 📄 README.md             # Documentação
 ```
 
 ## 🎯 **Critérios de Avaliação**
@@ -167,38 +198,35 @@ O supervisor analisa debates usando:
    - Fluxo argumentativo
    - Resposta aos oponentes
 
-## 🔬 **Testes**
+## 🔬 **Desenvolvimento e Testes**
 
 ```bash
-# Teste rápido dos agentes
-uv run python test_system.py
+# Teste do sistema de logging
+uv run python test_logging_system.py
 
-# Testes unitários completos
-uv run pytest tests/ -v
+# Visualizar logs em tempo real
+uv run python -m utils.log_viewer
 
-# Teste da avaliação
-uv run python eval/debate_evaluation.py
+# Verificar conectividade dos agentes A2A
+curl http://localhost:8002/.well-known/agent.json
+curl http://localhost:8003/.well-known/agent.json
+curl http://localhost:8004/.well-known/agent.json
+curl http://localhost:8005/.well-known/agent.json
 ```
 
-## 🚀 **Deploy**
+## 🚀 **Recursos Avançados**
 
-### 🌐 **Vertex AI**
-```bash
-# Configure credenciais
-export GOOGLE_APPLICATION_CREDENTIALS="path/to/service-account.json"
+### 📊 **Sistema de Logging**
+- **Enhanced Logger**: Sistema de logging estruturado
+- **Separação por Categoria**: Logs de A2A, agentes e sistema
+- **Rotação Diária**: Arquivos organizados por data
+- **Log Viewer**: Visualização em tempo real
 
-# Deploy para Vertex AI Agent Engine
-uv run python deployment/vertex_ai_deploy.py
-```
-
-### 🐳 **Docker**
-```bash
-# Build da imagem
-docker build -t flaflu-debate .
-
-# Execução
-docker run -p 8501:8501 -e GOOGLE_API_KEY=your_key flaflu-debate
-```
+### 🔧 **Monitoramento**
+- **Health Checks**: Status de cada agente A2A
+- **Message Tracking**: Rastreamento de mensagens entre agentes
+- **Performance Metrics**: Latência e throughput
+- **Error Handling**: Tratamento robusto de erros
 
 ## 📊 **Exemplos de Uso**
 
@@ -217,13 +245,30 @@ docker run -p 8501:8501 -e GOOGLE_API_KEY=your_key flaflu-debate
 
 ### 🔗 **Comunicação A2A**
 ```python
-# Flamengo solicita pesquisa
-debate_system.send_message(
-    from_agent="flamengo",
-    to_agent="researcher", 
-    message="PESQUISADOR: estatísticas de público no Maracanã",
-    context={"urgency": "high"}
-)
+# Flamengo solicita pesquisa via A2A
+POST http://localhost:8005/run
+{
+  "jsonrpc": "2.0",
+  "method": "conduct_research",
+  "params": {
+    "query": "estatísticas de público no Maracanã",
+    "requesting_agent": "flamengo_agent"
+  },
+  "id": "research_request_001"
+}
+```
+
+### 🌐 **Agent Cards**
+```json
+# Exemplo: http://localhost:8003/.well-known/agent.json
+{
+  "agent_id": "flamengo_agent",
+  "name": "Torcedor Flamengo",
+  "description": "Agente especializado em defender o Flamengo",
+  "capabilities": ["initial_argument", "counter_argument", "request_research"],
+  "version": "1.0.0",
+  "protocol": "A2A-v1.0"
+}
 ```
 
 ## 🤝 **Contribuição**
@@ -238,15 +283,17 @@ debate_system.send_message(
 
 Este projeto está sob a licença MIT. Veja `LICENSE` para detalhes.
 
-## 🏆 **Conquistas**
+## 🏆 **Funcionalidades Implementadas**
 
-- ✅ **4 Agentes Independentes** funcionais
-- ✅ **Protocolo A2A** implementado  
-- ✅ **Google ADK** compatível
-- ✅ **Interface Moderna** com Streamlit
-- ✅ **Análise Especializada** em tempo real
-- ✅ **Sistema de Pesquisa** integrado
-- ✅ **Deploy Ready** para produção
+- ✅ **4 Agentes A2A Independentes** em servidores separados
+- ✅ **Protocolo A2A v1.0** com Agent Cards e JSON-RPC 2.0
+- ✅ **Google ADK** padrões oficiais implementados
+- ✅ **Interface Streamlit** moderna e responsiva
+- ✅ **Sistema de Logging** avançado com rotação diária
+- ✅ **Agent Discovery** automático via HTTP
+- ✅ **Monitoramento em Tempo Real** de status dos agentes
+- ✅ **Research System** com tags `[PESQUISA]` integrado
+- ✅ **Neutralidade do Supervisor** garantida
 
 ---
 
